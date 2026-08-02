@@ -30,13 +30,21 @@ categorical_features <- c(
 
 fit_preprocessor <- function(data, rare_minimum = 20L) {
   medians <- vapply(data[numeric_features], median, numeric(1), na.rm = TRUE)
-  levels_map <- lapply(data[categorical_features], function(x) {
+  category_rules <- lapply(data[categorical_features], function(x) {
     x[is.na(x)] <- "None"
     counts <- table(x)
     kept <- names(counts[counts >= rare_minimum])
-    unique(c(kept, "Other"))
+    mapped <- x
+    mapped[!mapped %in% kept] <- "Other"
+    observed_levels <- sort(unique(mapped))
+    fallback <- if ("Other" %in% observed_levels) {
+      "Other"
+    } else {
+      names(sort(table(mapped), decreasing = TRUE))[1]
+    }
+    list(levels = observed_levels, kept = kept, fallback = fallback)
   })
-  list(medians = medians, levels = levels_map)
+  list(medians = medians, categories = category_rules)
 }
 
 apply_preprocessor <- function(data, prep) {
@@ -49,8 +57,9 @@ apply_preprocessor <- function(data, prep) {
   for (variable in categorical_features) {
     values <- data[[variable]]
     values[is.na(values)] <- "None"
-    values[!values %in% prep$levels[[variable]]] <- "Other"
-    result[[variable]] <- factor(values, levels = prep$levels[[variable]])
+    rule <- prep$categories[[variable]]
+    values[!values %in% rule$kept] <- rule$fallback
+    result[[variable]] <- factor(values, levels = rule$levels)
   }
   if ("SalePrice" %in% names(data)) result$SalePrice <- data$SalePrice
   result
